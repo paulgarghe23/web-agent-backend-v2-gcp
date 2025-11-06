@@ -22,13 +22,19 @@ LLM = "gemini-2.5-flash"
 llm = ChatVertexAI(model=LLM, location=LOCATION, temperature=0)
 
 
-def get_weather(query: str) -> str:
-    """Simulates a web search. Use it get information on weather"""
-    if "sf" in query.lower() or "san francisco" in query.lower():
-        return "It's 60 degrees and foggy."
-    return "It's 90 degrees and sunny."
+def get_paul_info(query: str) -> str:
+    """Get information about Paul"""
+    return "Paul is ...WIP"
 
 
 agent = create_react_agent(
-    model=llm, tools=[get_weather], prompt="You are a helpful assistant"
+    model=llm, 
+    tools=[get_paul_info], 
+    prompt=(
+    "You are Paul's personal AI agent. "
+    "Answer using the provided context about Paul. "
+    "If the user asks something generic and easy to answer, answer it. "
+    "If the user asks something specific and the answer is not in the context, you can analyze the situation, adapt and reply that based on the context and information you have been provided until now, you don't know the answer. "
+    "Always reply in the same language the user asks."
+    )
 )
