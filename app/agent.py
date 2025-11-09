@@ -16,6 +16,8 @@
 from langchain_google_vertexai import ChatVertexAI
 from langgraph.prebuilt import create_react_agent
 
+from app.utils.rag import search
+
 LOCATION = "global"
 LLM = "gemini-2.5-flash"
 
@@ -23,8 +25,8 @@ llm = ChatVertexAI(model=LLM, location=LOCATION, temperature=0)
 
 
 def get_paul_info(query: str) -> str:
-    """Get information about Paul"""
-    return "Paul is ...WIP"
+    """Search for information about Paul in documents."""
+    return search(query)
 
 
 agent = create_react_agent(
