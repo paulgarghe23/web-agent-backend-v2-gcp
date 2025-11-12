@@ -15,7 +15,7 @@ _vector_store = None
 
 def get_embeddings() -> VertexAIEmbeddings:
     return VertexAIEmbeddings(
-        model_name="textembedding-gecko@003",
+        model_name="text-embedding-004",
         project=project_id,
         location=LOCATION,
     )
