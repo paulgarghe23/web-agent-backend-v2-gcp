@@ -18,6 +18,7 @@ from collections.abc import Generator
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import logging as google_cloud_logging
 from langchain_core.runnables import RunnableConfig
 from traceloop.sdk import Instruments, Traceloop
@@ -26,6 +27,7 @@ from app.agent import agent
 from app.utils.tracing import CloudTraceLoggingSpanExporter
 from app.utils.typing import Feedback, InputChat, Request, dumps, ensure_valid_config
 
+
 # Initialize FastAPI app and logging
 app = FastAPI(
     title="web-agent",
@@ -33,6 +35,22 @@ app = FastAPI(
 )
 logging_client = google_cloud_logging.Client()
 logger = logging_client.logger(__name__)
+
+# Configurar CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://paulgarghe.com",
+        "https://www.paulgarghe.com",
+        "https://agent.paulgarghe.com",
+        "https://identity-forge-page-4ac4aatga-paul-iulian-garghes-projects.vercel.app",
+        "http://localhost:5173",
+        "http://localhost:8080",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize Telemetry
 try:
