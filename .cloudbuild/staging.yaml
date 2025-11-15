@@ -38,7 +38,7 @@ steps:
     args:
       - "run"
       - "deploy"
-      - "web-agent"
+      - "web-agent-west1"
       - "--image"
       - "$_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPO_NAME/$_CONTAINER_NAME"
       - "--region"
