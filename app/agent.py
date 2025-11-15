@@ -46,7 +46,7 @@ def answer_question(question: str) -> str:
                 "Answer using the provided context about Paul. "
                 "Synthesize information into your own words - never copy text verbatim. "
                 "Keep answers brief (2-4 sentences). "
-                "If the answer is not in the context, say you don't know. "
+                "If the answer is not in the context, say you don't know based on the information you have been provided until now. "
                 "Always reply in the same language the user asks."
             ),
         },

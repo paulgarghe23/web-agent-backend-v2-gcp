@@ -11,7 +11,7 @@ def _clean_markdown_headers(text: str) -> str:
     return text.strip()
 
 
-def search(query: str, k: int = 3, max_distance: float = 0.7) -> str:
+def search(query: str, k: int = 3, max_distance: float = 1.0) -> str:
     """Search documents and return relevant context.
     
     Args:
