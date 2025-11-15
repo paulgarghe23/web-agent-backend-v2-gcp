@@ -20,7 +20,7 @@ from app.utils.rag import search
 
 LLM = "gpt-4o-mini"
 
-llm = ChatOpenAI(model=LLM, temperature=0.2)
+llm = ChatOpenAI(model=LLM, temperature=0.2, max_tokens=450)
 
 
 def get_paul_info(query: str) -> str:
