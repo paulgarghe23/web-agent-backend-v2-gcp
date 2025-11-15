@@ -12,37 +12,54 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# mypy: disable-error-code="union-attr"
-from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import create_react_agent
+import os
+from openai import OpenAI
 
 from app.utils.rag import search
 
-LLM = "gpt-4o-mini"
+_client = None
 
-llm = ChatOpenAI(model=LLM, temperature=0.6, max_tokens=300)
+def _get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is not set")
+        _client = OpenAI(api_key=api_key)
+    return _client
 
 
-def get_paul_info(query: str) -> str:
-    """Search for information about Paul in documents. 
+def answer_question(question: str) -> str:
+    """Direct LLM call like the working project."""
+    # Get context from RAG
+    context = search(question)
     
-    Returns context that you must SYNTHESIZE into your own words. 
-    Do NOT copy the returned text verbatim. Think about what it means and explain it naturally.
-    """
-    return search(query)
-
-
-agent = create_react_agent(
-    model=llm, 
-    tools=[get_paul_info], 
-    prompt=(
-    "You are Paul's personal AI agent. Answer questions about Paul naturally and conversationally. "
+    if not context:
+        return "I don't have that information in my knowledge base yet and don't know it."
     
-    "IMPORTANT: When you receive context from the tool, THINK about what it means, then explain it in your own words. "
-    "Never copy text verbatim. Never quote large sections. Synthesize the information and explain it like you're telling a friend. "
-    "If the answer is not in the context you receive, say you don't know."
+    # Direct LLM call with same format as working project
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are Paul's personal AI agent. "
+                "Answer using the provided context about Paul. "
+                "Synthesize information into your own words - never copy text verbatim. "
+                "Keep answers brief (2-4 sentences). "
+                "If the answer is not in the context, say you don't know. "
+                "Always reply in the same language the user asks."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"CONTEXT:\n{context}\n\nQUESTION:\n{question}"
+        },
+    ]
     
-    "Keep answers brief (2-4 sentences). If you don't know something, say so. "
-    "Always reply in the same language the user asks."
-)
-)
+    resp = _get_client().chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        temperature=0.2,
+        max_tokens=300,
+    )
+    return resp.choices[0].message.content.strip()
