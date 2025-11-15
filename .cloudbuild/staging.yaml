@@ -127,8 +127,10 @@ steps:
         echo "_________________________________________________________________________"
 
 substitutions:
-  _STAGING_PROJECT_ID: YOUR_STAGING_PROJECT_ID
+  _STAGING_PROJECT_ID: web-agent-gcp-project
   _REGION: europe-southwest1
+  _ARTIFACT_REGISTRY_REPO_NAME: web-agent-repo
+  _CONTAINER_NAME: web-agent
 
 options:
   substitutionOption: ALLOW_LOOSE
