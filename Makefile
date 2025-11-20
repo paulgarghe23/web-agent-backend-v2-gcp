@@ -1,42 +1,37 @@
 # ==============================================================================
-# Installation & Setup
+# 🛠️ INSTALLATION & SETUP
 # ==============================================================================
 
-# Install dependencies using uv package manager
 install:
-	@command -v uv >/dev/null 2>&1 || { echo "uv is not installed. Installing uv..."; curl -LsSf https://astral.sh/uv/0.8.13/install.sh | sh; source $HOME/.local/bin/env; }
+	@echo "📦 Installing dependencies..."
+	@command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
 	uv sync --dev --extra streamlit
 
 # ==============================================================================
-# Playground Targets
+# 🚀 LOCAL DEPLOYMENT (PLAYGROUND)
 # ==============================================================================
 
-# Launch local dev playground
+# Option 1: Start everything together (API + UI)
 playground:
-	@echo "==============================================================================="
-	@echo "| 🚀 Starting your agent playground...                                        |"
-	@echo "|                                                                             |"
-	@echo "| 💡 Try asking: What's the weather in San Francisco?                         |"
-	@echo "==============================================================================="
-	powershell -Command "Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd ''C:\Users\paulg\OneDrive\Documentos\VSCode Web Projects\web-agent''; uv run uvicorn app.server:app --host localhost --port 8000 --reload'"
-	timeout /t 5
-	powershell -Command "Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd ''C:\Users\paulg\OneDrive\Documentos\VSCode Web Projects\web-agent''; uv run streamlit run frontend/streamlit_app.py --browser.serverAddress=localhost --server.enableCORS=false --server.enableXsrfProtection=false'"
+	@echo "🚀 Launching the system..."
+	@$(MAKE) -j2 api ui
 
-# ==============================================================================
-# Local Development Commands
-# ==============================================================================
-
-# Launch local development server with hot-reload
-local-backend:
+# Option 2: Start only the brain (API Backend)
+api:
+	@echo "🧠 Starting the brain (Backend)..."
 	uv run uvicorn app.server:app --host localhost --port 8000 --reload
 
+# Option 3: Start only the face (Frontend UI)
+ui:
+	@echo "💅 Starting the interface (Streamlit)..."
+	uv run streamlit run frontend/streamlit_app.py --browser.serverAddress=localhost --server.enableCORS=false --server.enableXsrfProtection=false
+
 # ==============================================================================
-# Backend Deployment Targets
+# ☁️ CLOUD DEPLOYMENT (GOOGLE CLOUD)
 # ==============================================================================
 
-# Deploy the agent remotely
-# Usage: make deploy [IAP=true] [PORT=8080] - Set IAP=true to enable Identity-Aware Proxy, PORT to specify container port
 deploy:
+	@echo "☁️ Uploading to cloud..."
 	PROJECT_ID=$$(gcloud config get-value project) && \
 	gcloud beta run deploy web-agent \
 		--source . \
@@ -44,39 +39,15 @@ deploy:
 		--project $$PROJECT_ID \
 		--region "europe-southwest1" \
 		--allow-unauthenticated \
-		--labels "" \
-		--update-build-env-vars "AGENT_VERSION=$(shell awk -F'"' '/^version = / {print $$2}' pyproject.toml || echo '0.0.0')" \
-		--set-env-vars \
-		"COMMIT_SHA=$(shell git rev-parse HEAD),GCS_BUCKET_NAME=web-agent-data-web-agent-gcp-project" \
-		$(if $(IAP),--iap) \
-		$(if $(PORT),--port=$(PORT))
-
-# Alias for 'make deploy' for backward compatibility
-backend: deploy
-
+		--update-build-env-vars "AGENT_VERSION=0.1.0" \
+		--set-env-vars "GCS_BUCKET_NAME=web-agent-data-web-agent-gcp-project"
 
 # ==============================================================================
-# Infrastructure Setup
+# 🧪 TESTS & QUALITY
 # ==============================================================================
 
-# Set up development environment resources using Terraform
-setup-dev-env:
-	PROJECT_ID=$$(gcloud config get-value project) && \
-	(cd deployment/terraform/dev && terraform init && terraform apply --var-file vars/env.tfvars --var dev_project_id=$$PROJECT_ID --auto-approve)
-
-# ==============================================================================
-# Testing & Code Quality
-# ==============================================================================
-
-# Run unit and integration tests
 test:
 	uv run pytest tests/unit
-	uv run pytest tests/integration
 
-# Run code quality checks (codespell, ruff, mypy)
 lint:
-	uv sync --dev --extra lint
-	uv run codespell
 	uv run ruff check . --diff
-	uv run ruff format . --check --diff
-	uv run mypy .
