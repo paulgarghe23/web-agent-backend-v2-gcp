@@ -19,7 +19,7 @@ playground:
 # Option 2: Start only the brain (API Backend)
 api:
 	@echo "🧠 Starting the brain (Backend)..."
-	uv run uvicorn app.server:app --host localhost --port 8000 --reload
+	GOOGLE_CLOUD_PROJECT=web-agent-gcp-project uv run uvicorn app.server:app --host localhost --port 8000 --reload
 
 # Option 3: Start only the face (Frontend UI)
 ui:

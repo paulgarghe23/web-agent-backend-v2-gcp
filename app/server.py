@@ -33,8 +33,13 @@ app = FastAPI(
     title="web-agent",
     description="API for interacting with the Agent web-agent",
 )
-logging_client = google_cloud_logging.Client()
-logger = logging_client.logger(__name__)
+
+# Use standard Python logging for local dev, Google Cloud Logging for production
+if os.getenv("GOOGLE_CLOUD_PROJECT"):
+    logging_client = google_cloud_logging.Client()
+    logging_client.setup_logging()  # This hooks into standard logging
+    
+logger = logging.getLogger(__name__)
 
 # Configurar CORS
 app.add_middleware(
@@ -158,7 +163,7 @@ def collect_feedback(feedback: Feedback) -> dict[str, str]:
     Returns:
         Success message
     """
-    logger.log_struct(feedback.model_dump(), severity="INFO")
+    logger.info(f"Feedback received: {feedback.model_dump()}")
     return {"status": "success"}
 
 
