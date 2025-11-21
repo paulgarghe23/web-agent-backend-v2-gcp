@@ -42,7 +42,14 @@ app = FastAPI(
 if os.getenv("GOOGLE_CLOUD_PROJECT"):
     logging_client = google_cloud_logging.Client()
     logging_client.setup_logging()  # This hooks into standard logging
-    
+else:
+    # LOCAL: Configurar logging para ver logs en consola
+    logging.basicConfig(
+        level=logging.INFO,  # Ver INFO, WARNING, ERROR
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
 logger = logging.getLogger(__name__)
 
 # Configurar CORS
