@@ -13,9 +13,13 @@
 # limitations under the License.
 
 import os
+from dotenv import load_dotenv
 from openai import OpenAI
 
 from app.utils.rag import search
+
+# Load environment variables from .env file
+load_dotenv()
 
 _client = None
 

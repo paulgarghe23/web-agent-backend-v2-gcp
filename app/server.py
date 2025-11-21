@@ -16,6 +16,7 @@ import logging
 import os
 from collections.abc import Generator
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +27,9 @@ from traceloop.sdk import Instruments, Traceloop
 from app.agent import answer_question
 from app.utils.tracing import CloudTraceLoggingSpanExporter
 from app.utils.typing import Feedback, InputChat, Request, dumps, ensure_valid_config
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 # Initialize FastAPI app and logging
@@ -114,6 +118,12 @@ def stream_messages(
             return
         
         question = last_message.content
+        # Extract text from content if it's a list of content parts
+        if isinstance(question, list):
+            text_parts = [part.get('text', '') for part in question if isinstance(part, dict) and part.get('type') == 'text']
+            question = ' '.join(text_parts) if text_parts else str(question)
+        elif not isinstance(question, str):
+            question = str(question)
         
         # Direct call - get answer
         answer = answer_question(question)
