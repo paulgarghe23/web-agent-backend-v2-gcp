@@ -15,6 +15,7 @@
 import logging
 import os
 from collections.abc import Generator
+import time
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -39,16 +40,82 @@ app = FastAPI(
 )
 
 # Use standard Python logging for local dev, Google Cloud Logging for production
-if os.getenv("GOOGLE_CLOUD_PROJECT"):
-    logging_client = google_cloud_logging.Client()
-    logging_client.setup_logging()  # This hooks into standard logging
-else:
-    # LOCAL: Configurar logging para ver logs en consola
+# Check if running locally (not in Cloud Run/GKE) by checking environment
+is_local = os.getenv("K_SERVICE") is None and os.getenv("GAE_SERVICE") is None
+
+if is_local:
+    # LOCAL: Always use console logging when running locally with detailed format
+    class DetailedFormatter(logging.Formatter):
+        def format(self, record):
+            # Base format
+            result = super().format(record)
+            
+            # Add file location
+            if hasattr(record, 'pathname'):
+                filename = record.pathname.split('/')[-1] if '/' in record.pathname else record.pathname
+                func_name = record.funcName if hasattr(record, 'funcName') else 'unknown'
+                result += f"\n  📁 {filename}:{record.lineno} in {func_name}()"
+            
+            # Add extra fields if they exist
+            if hasattr(record, 'event'):
+                result += f"\n  📍 Event: {record.event}"
+            if hasattr(record, 'question'):
+                result += f"\n  ❓ Question: {record.question[:200]}{'...' if len(getattr(record, 'question', '')) > 200 else ''}"
+            if hasattr(record, 'answer'):
+                result += f"\n  💬 Answer: {record.answer[:200]}{'...' if len(getattr(record, 'answer', '')) > 200 else ''}"
+            if hasattr(record, 'context_preview'):
+                preview = getattr(record, 'context_preview', '')
+                context_len = getattr(record, 'context_length', 0)
+                result += f"\n  📄 Context ({context_len} chars): {preview[:600]}{'...' if len(preview) > 600 else ''}"
+            if hasattr(record, 'context_full') and len(getattr(record, 'context_full', '')) < 2000:
+                result += f"\n  📄 Full Context: {getattr(record, 'context_full', '')}"
+            if hasattr(record, 'scores'):
+                result += f"\n  🎯 Scores: {record.scores}"
+            if hasattr(record, 'tokens_total'):
+                result += f"\n  🪙 Tokens: {record.tokens_total} (prompt: {getattr(record, 'tokens_prompt', 0)}, completion: {getattr(record, 'tokens_completion', 0)})"
+            if hasattr(record, 'total_time_seconds'):
+                result += f"\n  ⏱️  Time: {record.total_time_seconds}s"
+            if hasattr(record, 'rag_time_seconds'):
+                result += f"\n  🔍 RAG: {record.rag_time_seconds}s"
+            if hasattr(record, 'llm_time_seconds'):
+                result += f"\n  🤖 LLM: {record.llm_time_seconds}s"
+            if hasattr(record, 'chunks_used'):
+                result += f"\n  📚 Chunks: {record.chunks_used}"
+            if hasattr(record, 'vector_count'):
+                result += f"\n  🗂️  Vectors: {record.vector_count}"
+            
+            return result
+    
+    handler = logging.StreamHandler()
+    handler.setFormatter(DetailedFormatter(
+        fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    ))
+    
     logging.basicConfig(
-        level=logging.INFO,  # Ver INFO, WARNING, ERROR
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        level=logging.INFO,
+        handlers=[handler],
+        force=True,
     )
+elif os.getenv("GOOGLE_CLOUD_PROJECT"):
+    # Production: Use Google Cloud Logging with structured logging
+    try:
+        logging_client = google_cloud_logging.Client()
+        # Setup logging to capture extra fields in jsonPayload
+        logging_client.setup_logging(log_level=logging.INFO)
+        # Create a custom handler that properly formats structured logs
+        cloud_handler = logging_client.get_default_handler()
+        if cloud_handler:
+            cloud_handler.setLevel(logging.INFO)
+    except Exception as e:
+        # Fallback to console if Cloud Logging fails
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            force=True,
+        )
+        logging.warning(f"Failed to setup Cloud Logging, using console: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -112,14 +179,30 @@ def stream_messages(
     Yields:
         JSON serialized event data
     """
+    request_start = time.time()
+    
     try:
         config = ensure_valid_config(config=config)
         set_tracing_properties(config)
+        
+        # LOG: Request recibido
+        logger.info("API_REQUEST_RECEIVED", extra={
+            "event": "request_received",
+            "messages_count": len(input.messages),
+            "run_id": str(config.get("run_id", "None")),
+            "user_id": config.get("metadata", {}).get("user_id", "None"),
+            "session_id": config.get("metadata", {}).get("session_id", "None"),
+        })
         
         # Get last user message
         messages = input.messages
         last_message = messages[-1] if messages else None
         if not last_message or last_message.type != "human":
+            logger.warning("INVALID_REQUEST_NO_QUESTION", extra={
+                "event": "invalid_request",
+                "messages_count": len(messages),
+                "last_message_type": last_message.type if last_message else "None"
+            })
             error_message = {"type": "error", "content": "No valid question found"}
             yield dumps(error_message) + "\n"
             return
@@ -132,17 +215,52 @@ def stream_messages(
         elif not isinstance(question, str):
             question = str(question)
         
+        # LOG: Pregunta extraída
+        logger.info("QUESTION_EXTRACTED", extra={
+            "event": "question_extracted",
+            "question": question,
+            "question_length": len(question),
+            "question_type": type(question).__name__,
+            "run_id": str(config.get("run_id", "None")),
+        })
+        
         # Direct call - get answer
         answer = answer_question(question)
         
+        request_time = time.time() - request_start
+        
+        # LOG: Respuesta generada
+        logger.info("ANSWER_GENERATED", extra={
+            "event": "answer_generated",
+            "question": question,
+            "answer": answer,
+            "answer_length": len(answer),
+            "total_request_time_seconds": round(request_time, 3),
+            "run_id": str(config.get("run_id", "None")),
+        })
+        
         # Stream answer as chunks (simulate streaming for compatibility)
         chunk_size = 10
+        chunks_sent = 0
         for i in range(0, len(answer), chunk_size):
             chunk = answer[i:i + chunk_size]
             yield dumps({"type": "AIMessageChunk", "content": chunk}) + "\n"
+            chunks_sent += 1
+        
+        logger.info("RESPONSE_STREAMED", extra={
+            "event": "response_streamed",
+            "chunks_sent": chunks_sent,
+            "total_chars": len(answer),
+        })
             
     except Exception as e:
-        logger.error(f"Error in stream_messages: {str(e)}", exc_info=True)
+        request_time = time.time() - request_start
+        logger.error("ERROR_IN_STREAM_MESSAGES", extra={
+            "event": "error",
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "request_time_seconds": round(request_time, 3),
+        }, exc_info=True)
         error_message = {"type": "error", "content": f"Error: {str(e)}"}
         yield dumps(error_message) + "\n"
 
