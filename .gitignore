@@ -198,3 +198,6 @@ my_env.tfvars
 
 #data folder
 /data
+
+# Cursor IDE
+.cursorignore
