@@ -5,4 +5,4 @@ project_name = "web-agent"
 dev_project_id = "your-dev-project-id"
 
 # The Google Cloud region you will use to deploy the infrastructure
-region = "europe-southwest1"
+region = "europe-west1"

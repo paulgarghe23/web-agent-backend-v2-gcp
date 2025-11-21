@@ -13,7 +13,7 @@ from app.utils.document_loader import load_documents
 logger = logging.getLogger(__name__)
 
 _, project_id = google.auth.default()
-LOCATION = os.getenv("LOCATION", "europe-southwest1")
+LOCATION = os.getenv("LOCATION", "europe-west1")
 
 _vector_store = None
 

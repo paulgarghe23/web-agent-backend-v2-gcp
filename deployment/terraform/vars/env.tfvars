@@ -19,4 +19,4 @@ repository_owner = "Your GitHub organization or username."
 repository_name = "web-agent"
 
 # The Google Cloud region you will use to deploy the infrastructure
-region = "europe-southwest1"
+region = "europe-west1"

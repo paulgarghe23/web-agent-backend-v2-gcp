@@ -37,7 +37,7 @@ deploy:
 		--source . \
 		--memory "4Gi" \
 		--project $$PROJECT_ID \
-		--region "europe-southwest1" \
+		--region "europe-west1" \
 		--allow-unauthenticated \
 		--update-build-env-vars "AGENT_VERSION=0.1.0" \
 		--set-env-vars "GCS_BUCKET_NAME=web-agent-data-web-agent-gcp-project"
