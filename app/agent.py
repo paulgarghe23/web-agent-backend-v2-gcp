@@ -16,7 +16,8 @@ import os
 import logging
 import time
 from dotenv import load_dotenv
-from openai import OpenAI
+from langchain_google_vertexai import ChatVertexAI
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.utils.rag import search
 
@@ -27,17 +28,25 @@ logger = logging.getLogger(__name__)
 
 _client = None
 
-def _get_client() -> OpenAI:
+def _get_client() -> ChatVertexAI:
     global _client
     if _client is None:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is not set")
-        logger.info("OPENAI_CLIENT_INITIALIZED", extra={
-            "event": "openai_client_created",
-            "api_key_prefix": api_key[:7] + "..." if api_key else "None",
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+        location = os.getenv("GOOGLE_CLOUD_LOCATION", "europe-west1")
+        if not project_id:
+            raise RuntimeError("GOOGLE_CLOUD_PROJECT is not set")
+        logger.info("VERTEX_AI_CLIENT_INITIALIZED", extra={
+            "event": "vertex_ai_client_created",
+            "project_id": project_id,
+            "location": location,
         })
-        _client = OpenAI(api_key=api_key)
+        _client = ChatVertexAI(
+            model_name="gemini-2.5-flash",
+            project=project_id,
+            location=location,
+            temperature=0.2,
+            max_tokens=300,
+        )
     return _client
 
 
@@ -82,15 +91,12 @@ def answer_question(question: str) -> str:
         "Always reply in the same language the user asks."
     )
     
+    user_content = f"CONTEXT:\n{context}\n\nQUESTION:\n{question}"
+    
+    # LangChain message format for Vertex AI
     messages = [
-        {
-            "role": "system",
-            "content": system_prompt,
-        },
-        {
-            "role": "user",
-            "content": f"CONTEXT:\n{context}\n\nQUESTION:\n{question}"
-        },
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_content),
     ]
     
     # LOG: Llamada al LLM
@@ -98,31 +104,31 @@ def answer_question(question: str) -> str:
     logger.info("LLM_CALL_STARTED", extra={
         "event": "llm_call_started",
         "question": question,
-        "model": "gpt-4o-mini",
+        "model": "gemini-2.5-flash",
         "temperature": 0.2,
         "max_tokens": 300,
         "system_prompt_length": len(system_prompt),
-        "user_message_length": len(messages[1]["content"]),
+        "user_message_length": len(user_content),
         "estimated_prompt_tokens": prompt_tokens_estimate,
     })
     
     llm_start = time.time()
-    resp = _get_client().chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages,
-        temperature=0.2,
-        max_tokens=300,
-    )
+    llm = _get_client()
+    resp = llm.invoke(messages)
     llm_time = time.time() - llm_start
     
-    answer = resp.choices[0].message.content.strip()
+    answer = resp.content.strip() if hasattr(resp, 'content') else str(resp).strip()
     total_time = time.time() - total_start
     
-    # Extract token usage
-    usage = resp.usage.model_dump() if hasattr(resp, 'usage') and resp.usage else {}
-    tokens_prompt = usage.get("prompt_tokens", 0)
-    tokens_completion = usage.get("completion_tokens", 0)
-    tokens_total = usage.get("total_tokens", 0)
+    # Extract token usage (Vertex AI response structure)
+    tokens_prompt = 0
+    tokens_completion = 0
+    tokens_total = 0
+    if hasattr(resp, 'response_metadata'):
+        usage = resp.response_metadata.get('token_count', {}) if resp.response_metadata else {}
+        tokens_prompt = usage.get("prompt_token_count", 0)
+        tokens_completion = usage.get("candidates_token_count", 0)
+        tokens_total = tokens_prompt + tokens_completion
     
     # LOG: Respuesta del LLM
     logger.info("LLM_CALL_COMPLETED", extra={
@@ -136,8 +142,8 @@ def answer_question(question: str) -> str:
         "tokens_completion": tokens_completion,
         "tokens_total": tokens_total,
         "tokens_per_second": round(tokens_total / llm_time, 2) if llm_time > 0 else 0,
-        "model": "gpt-4o-mini",
-        "finish_reason": resp.choices[0].finish_reason if hasattr(resp.choices[0], 'finish_reason') else "unknown",
+        "model": "gemini-2.5-flash",
+        "finish_reason": getattr(resp, 'response_metadata', {}).get('finish_reason', 'unknown') if hasattr(resp, 'response_metadata') else "unknown",
     })
     
     return answer
