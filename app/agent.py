@@ -98,6 +98,7 @@ def get_paul_info(query: str) -> str:
     system_prompt = (
         "You are Paul's personal AI agent. "
         "Answer using the provided context about Paul. "
+        "Do not make things up. "
         "Synthesize information into your own words - never copy text verbatim. "
         "Keep answers brief (2-4 sentences). "
         "If the answer is not in the context, say you don't know based on the information you have been provided until now. "
