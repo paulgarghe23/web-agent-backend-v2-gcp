@@ -77,7 +77,17 @@ def _load_from_local(data_dir: str = "data") -> list[Document]:
             "file_size_bytes": xlsx.stat().st_size if xlsx.exists() else 0,
         })
         df = pd.read_excel(xlsx, sheet_name="Work Stories")
-        text = df.to_string(index=False)
+        # Extract text compactly: iterate rows and columns, skip empty cells
+        text_lines = []
+        for idx, row in df.iterrows():
+            row_parts = []
+            for col in df.columns:
+                value = row[col]
+                if pd.notna(value) and str(value).strip():
+                    row_parts.append(str(value).strip())
+            if row_parts:
+                text_lines.append(" ".join(row_parts))
+        text = "\n".join(text_lines)
         xlsx_doc = Document(page_content=text, metadata={"source": "work_stories.xlsx"})
         docs.append(xlsx_doc)
         logger.info("XLSX_LOADED", extra={
@@ -163,7 +173,17 @@ def _load_from_gcs(bucket_name: str, prefix: str = "data/") -> list[Document]:
         local_path = f"/tmp/work_stories.xlsx"
         blob.download_to_filename(local_path)
         df = pd.read_excel(local_path, sheet_name="Work Stories")
-        text = df.to_string(index=False)
+        # Extract text compactly: iterate rows and columns, skip empty cells
+        text_lines = []
+        for idx, row in df.iterrows():
+            row_parts = []
+            for col in df.columns:
+                value = row[col]
+                if pd.notna(value) and str(value).strip():
+                    row_parts.append(str(value).strip())
+            if row_parts:
+                text_lines.append(" ".join(row_parts))
+        text = "\n".join(text_lines)
         xlsx_doc = Document(page_content=text, metadata={"source": "work_stories.xlsx"})
         docs.append(xlsx_doc)
         logger.info("XLSX_DOWNLOADED_FROM_GCS", extra={
