@@ -25,7 +25,7 @@ from google.cloud import logging as google_cloud_logging
 from langchain_core.runnables import RunnableConfig
 from traceloop.sdk import Instruments, Traceloop
 
-from app.agent import answer_question
+from app.agent import get_agent
 from app.utils.tracing import CloudTraceLoggingSpanExporter
 from app.utils.typing import Feedback, InputChat, Request, dumps, ensure_valid_config
 
@@ -83,6 +83,34 @@ if is_local:
                 result += f"\n  📚 Chunks: {record.chunks_used}"
             if hasattr(record, 'vector_count'):
                 result += f"\n  🗂️  Vectors: {record.vector_count}"
+            if hasattr(record, 'synthesized_answer'):
+                result += f"\n  🔧 Tool Answer: {record.synthesized_answer}"
+            if hasattr(record, 'answer_being_returned'):
+                result += f"\n  🔧 Tool Returning: {record.answer_being_returned}"
+            if hasattr(record, 'content_full'):
+                result += f"\n  📝 Content Full: {record.content_full}"
+            if hasattr(record, 'document_content_full'):
+                result += f"\n  📄 Document Content Full: {record.document_content_full}"
+            if hasattr(record, 'is_from_cv'):
+                result += f"\n  📋 Is From CV: {record.is_from_cv}"
+            if hasattr(record, 'document_source'):
+                result += f"\n  📁 Document Source: {record.document_source}"
+            if hasattr(record, 'message_index'):
+                result += f"\n  📊 Message #{record.message_index}"
+            if hasattr(record, 'is_duplicate'):
+                result += f"\n  ⚠️  Is Duplicate: {record.is_duplicate}"
+            if hasattr(record, 'messages_detail'):
+                result += f"\n  📋 Messages Detail:"
+                for msg in record.messages_detail:
+                    result += f"\n    - #{msg.get('index', '?')} [{msg.get('type', '?')}] ({msg.get('length', 0)} chars): {msg.get('content_full', '')[:100]}"
+            if hasattr(record, 'has_content'):
+                result += f"\n  ✅ Has Content: {record.has_content}"
+            if hasattr(record, 'content_type'):
+                result += f"\n  📦 Content Type: {record.content_type}"
+            if hasattr(record, 'raw_content_length'):
+                result += f"\n  📏 Raw Content Length: {record.raw_content_length}"
+            if hasattr(record, 'raw_content_full'):
+                result += f"\n  🔍 RAW CONTENT FULL: {record.raw_content_full}"
             
             return result
     
@@ -194,63 +222,125 @@ def stream_messages(
             "session_id": config.get("metadata", {}).get("session_id", "None"),
         })
         
-        # Get last user message
+        # Prepare input for LangGraph agent
         messages = input.messages
-        last_message = messages[-1] if messages else None
-        if not last_message or last_message.type != "human":
-            logger.warning("INVALID_REQUEST_NO_QUESTION", extra={
+        if not messages:
+            logger.warning("INVALID_REQUEST_NO_MESSAGES", extra={
                 "event": "invalid_request",
-                "messages_count": len(messages),
-                "last_message_type": last_message.type if last_message else "None"
+                "messages_count": 0,
             })
-            error_message = {"type": "error", "content": "No valid question found"}
+            error_message = {"type": "error", "content": "No messages found"}
             yield dumps(error_message) + "\n"
             return
         
-        question = last_message.content
-        # Extract text from content if it's a list of content parts
-        if isinstance(question, list):
-            text_parts = [part.get('text', '') for part in question if isinstance(part, dict) and part.get('type') == 'text']
-            question = ' '.join(text_parts) if text_parts else str(question)
-        elif not isinstance(question, str):
-            question = str(question)
+        # Log conversation context
+        last_message = messages[-1] if messages else None
+        question = None
+        if last_message and hasattr(last_message, 'content'):
+            question = last_message.content
+            if isinstance(question, list):
+                text_parts = [part.get('text', '') for part in question if isinstance(part, dict) and part.get('type') == 'text']
+                question = ' '.join(text_parts) if text_parts else str(question)
+            elif not isinstance(question, str):
+                question = str(question)
         
-        # LOG: Pregunta extraída
-        logger.info("QUESTION_EXTRACTED", extra={
-            "event": "question_extracted",
-            "question": question,
-            "question_length": len(question),
-            "question_type": type(question).__name__,
-            "run_id": str(config.get("run_id", "None")),
+        logger.info("CONVERSATION_CONTEXT", extra={
+            "event": "conversation_context",
+            "messages_count": len(messages),
+            "last_message_type": last_message.type if last_message else "None",
+            "question": question if question else "None",
+            "has_conversation_history": len(messages) > 1,
         })
         
-        # Direct call - get answer
-        answer = answer_question(question)
+        # Stream from LangGraph agent
+        agent = get_agent()
+        input_dict = {"messages": messages}
+        chunks_sent = 0
+        final_answer = ""
+        
+        logger.info("LANGGRAPH_STREAM_START", extra={
+            "event": "langgraph_stream_start",
+            "messages_count": len(messages),
+        })
+        
+        # With stream_mode="values", we get the full state after each step
+        # We'll extract the last AI message from the final state
+        last_state = None
+        tool_call_logged = False  # Only log tool call once
+        
+        for state in agent.stream(input_dict, config=config, stream_mode="values"):
+            # state is a dict with the full graph state
+            last_state = state
+            
+            # Log tool calls only once (first time we see them)
+            if not tool_call_logged:
+                messages = state.get("messages", [])
+                for msg in messages:
+                    if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                        tool_names = [tc.get('name', 'unknown') if isinstance(tc, dict) else getattr(tc, 'name', 'unknown') for tc in msg.tool_calls]
+                        logger.info("TOOL_CALL_DETECTED", extra={
+                            "event": "tool_call_detected",
+                            "tool_calls_count": len(msg.tool_calls),
+                            "tool_names": tool_names,
+                        })
+                        tool_call_logged = True
+                        break
+        
+        # After stream completes, extract the final AI message from the last state
+        if last_state:
+            messages = last_state.get("messages", [])
+            # Find the last AI message (without tool_calls)
+            final_ai_message = None
+            for msg in reversed(messages):
+                if hasattr(msg, 'type') and msg.type == "ai":
+                    if not (hasattr(msg, 'tool_calls') and msg.tool_calls):
+                        final_ai_message = msg
+                        break
+            
+            if final_ai_message:
+                # Extract content
+                content = ""
+                if hasattr(final_ai_message, 'content'):
+                    content = final_ai_message.content
+                    if isinstance(content, list):
+                        text_parts = [part.get('text', '') for part in content if isinstance(part, dict) and part.get('type') == 'text']
+                        content = ' '.join(text_parts) if text_parts else str(content)
+                    elif not isinstance(content, str):
+                        content = str(content)
+                
+                if content:
+                    logger.info("FINAL_AI_MESSAGE_EXTRACTED", extra={
+                        "event": "final_ai_message_extracted",
+                        "content_full": content,
+                        "content_length": len(content),
+                    })
+                    
+                    final_answer = content
+                    
+                    # Stream the final answer
+                    chunk_size = 10
+                    for i in range(0, len(content), chunk_size):
+                        chunk = content[i:i + chunk_size]
+                        yield dumps({"type": "AIMessageChunk", "content": chunk}) + "\n"
+                        chunks_sent += 1
         
         request_time = time.time() - request_start
         
         # LOG: Respuesta generada
         logger.info("ANSWER_GENERATED", extra={
             "event": "answer_generated",
-            "question": question,
-            "answer": answer,
-            "answer_length": len(answer),
+            "question": question if question else "conversation",
+            "answer": final_answer,
+            "answer_length": len(final_answer),
             "total_request_time_seconds": round(request_time, 3),
             "run_id": str(config.get("run_id", "None")),
+            "chunks_sent": chunks_sent,
         })
         
-        # Stream answer as chunks (simulate streaming for compatibility)
-        chunk_size = 10
-        chunks_sent = 0
-        for i in range(0, len(answer), chunk_size):
-            chunk = answer[i:i + chunk_size]
-            yield dumps({"type": "AIMessageChunk", "content": chunk}) + "\n"
-            chunks_sent += 1
-        
-        logger.info("RESPONSE_STREAMED", extra={
-            "event": "response_streamed",
+        logger.info("LANGGRAPH_STREAM_COMPLETED", extra={
+            "event": "langgraph_stream_completed",
             "chunks_sent": chunks_sent,
-            "total_chars": len(answer),
+            "total_chars": len(final_answer),
         })
             
     except Exception as e:

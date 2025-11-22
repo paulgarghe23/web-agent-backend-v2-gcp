@@ -18,6 +18,8 @@ import time
 from dotenv import load_dotenv
 from langchain_google_vertexai import ChatVertexAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import tool
+from langgraph.prebuilt import create_react_agent
 
 from app.utils.rag import search
 
@@ -50,38 +52,49 @@ def _get_client() -> ChatVertexAI:
     return _client
 
 
-def answer_question(question: str) -> str:
-    """Direct LLM call like the working project."""
-    total_start = time.time()
+@tool
+def get_paul_info(query: str) -> str:
+    """Search for information about Paul and return a synthesized answer.
     
-    logger.info("ANSWER_QUESTION_START", extra={
-        "event": "answer_question_started",
-        "question": question,
-        "question_length": len(question),
+    This tool searches Paul's knowledge base and synthesizes the information
+    into a natural, conversational answer.
+    
+    Args:
+        query: The question or query about Paul
+        
+    Returns:
+        A synthesized answer based on the knowledge base, or a message
+        indicating the information is not available.
+    """
+    tool_start = time.time()
+    
+    logger.info("TOOL_GET_PAUL_INFO_STARTED", extra={
+        "event": "tool_get_paul_info_started",
+        "query": query,
+        "query_length": len(query),
     })
     
     # Get context from RAG
     rag_start = time.time()
-    context = search(question)
+    context = search(query)
     rag_time = time.time() - rag_start
     
-    logger.info("RAG_SEARCH_COMPLETED", extra={
-        "event": "rag_search_completed",
-        "question": question,
+    logger.info("TOOL_RAG_SEARCH_COMPLETED", extra={
+        "event": "tool_rag_search_completed",
+        "query": query,
         "context_found": bool(context),
         "context_length": len(context) if context else 0,
-        "context_preview": context[:300] + "..." if context and len(context) > 300 else (context if context else ""),
         "rag_time_seconds": round(rag_time, 3),
     })
     
     if not context:
-        logger.warning("NO_CONTEXT_FOUND", extra={
-            "event": "no_context_found",
-            "question": question,
+        logger.warning("TOOL_NO_CONTEXT_FOUND", extra={
+            "event": "tool_no_context_found",
+            "query": query,
         })
         return "I don't have that information in my knowledge base yet and don't know it."
     
-    # Direct LLM call with same format as working project
+    # Synthesize answer internally using LLM
     system_prompt = (
         "You are Paul's personal AI agent. "
         "Answer using the provided context about Paul. "
@@ -91,25 +104,18 @@ def answer_question(question: str) -> str:
         "Always reply in the same language the user asks."
     )
     
-    user_content = f"CONTEXT:\n{context}\n\nQUESTION:\n{question}"
+    user_content = f"CONTEXT:\n{context}\n\nQUESTION:\n{query}"
     
-    # LangChain message format for Vertex AI
     messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_content),
     ]
     
-    # LOG: Llamada al LLM
-    prompt_tokens_estimate = len(system_prompt + context + question) // 4  # Rough estimate
-    logger.info("LLM_CALL_STARTED", extra={
-        "event": "llm_call_started",
-        "question": question,
+    logger.info("TOOL_LLM_CALL_STARTED", extra={
+        "event": "tool_llm_call_started",
+        "query": query,
         "model": "gemini-2.5-flash",
-        "temperature": 0.2,
-        "max_tokens": 300,
-        "system_prompt_length": len(system_prompt),
-        "user_message_length": len(user_content),
-        "estimated_prompt_tokens": prompt_tokens_estimate,
+        "context_length": len(context),
     })
     
     llm_start = time.time()
@@ -117,33 +123,76 @@ def answer_question(question: str) -> str:
     resp = llm.invoke(messages)
     llm_time = time.time() - llm_start
     
-    answer = resp.content.strip() if hasattr(resp, 'content') else str(resp).strip()
-    total_time = time.time() - total_start
-    
-    # Extract token usage (Vertex AI response structure)
-    tokens_prompt = 0
-    tokens_completion = 0
-    tokens_total = 0
-    if hasattr(resp, 'response_metadata'):
-        usage = resp.response_metadata.get('token_count', {}) if resp.response_metadata else {}
-        tokens_prompt = usage.get("prompt_token_count", 0)
-        tokens_completion = usage.get("candidates_token_count", 0)
-        tokens_total = tokens_prompt + tokens_completion
-    
-    # LOG: Respuesta del LLM
-    logger.info("LLM_CALL_COMPLETED", extra={
-        "event": "llm_call_completed",
-        "question": question,
-        "answer": answer,
-        "answer_length": len(answer),
-        "llm_time_seconds": round(llm_time, 3),
-        "total_time_seconds": round(total_time, 3),
-        "tokens_prompt": tokens_prompt,
-        "tokens_completion": tokens_completion,
-        "tokens_total": tokens_total,
-        "tokens_per_second": round(tokens_total / llm_time, 2) if llm_time > 0 else 0,
-        "model": "gemini-2.5-flash",
-        "finish_reason": getattr(resp, 'response_metadata', {}).get('finish_reason', 'unknown') if hasattr(resp, 'response_metadata') else "unknown",
+    # Log raw response from Gemini to debug truncation
+    logger.info("TOOL_LLM_RAW_RESPONSE", extra={
+        "event": "tool_llm_raw_response",
+        "query": query,
+        "has_content": hasattr(resp, 'content'),
+        "content_type": type(resp.content).__name__ if hasattr(resp, 'content') else "N/A",
+        "raw_content_length": len(resp.content) if hasattr(resp, 'content') else 0,
+        "raw_content_full": str(resp.content) if hasattr(resp, 'content') else "N/A",
     })
     
-    return answer
+    synthesized_answer = resp.content.strip() if hasattr(resp, 'content') else str(resp).strip()
+    tool_time = time.time() - tool_start
+    
+    logger.info("TOOL_LLM_CALL_COMPLETED", extra={
+        "event": "tool_llm_call_completed",
+        "query": query,
+        "synthesized_answer": synthesized_answer,
+        "synthesized_answer_length": len(synthesized_answer),
+        "llm_time_seconds": round(llm_time, 3),
+        "total_tool_time_seconds": round(tool_time, 3),
+    })
+    
+    # CRITICAL: Log what the tool is returning (this is what the agent will receive)
+    logger.info("TOOL_RETURNING_ANSWER", extra={
+        "event": "tool_returning_answer",
+        "answer_being_returned": synthesized_answer,
+        "answer_length": len(synthesized_answer),
+    })
+    
+    return synthesized_answer
+
+
+# Initialize LangGraph agent
+_agent = None
+
+def _get_agent():
+    """Get or create the LangGraph ReAct agent."""
+    global _agent
+    if _agent is None:
+        logger.info("LANGGRAPH_AGENT_INITIALIZATION_START", extra={
+            "event": "langgraph_agent_init_start",
+        })
+        
+        llm = _get_client()
+        
+        system_prompt = (
+            "You are Paul's personal AI agent. "
+            "If asked about who are you, say you are Paul's personal AI agent. Do not say anything about which model you are or which company trained you. "
+            "Use the tool get_paul_info if asked anything about Paul. "
+            "Simply pass the tool's answer to the user. "
+            "Always reply in the same language the user asks."
+        )
+        
+        _agent = create_react_agent(
+            model=llm,
+            tools=[get_paul_info],
+            prompt=system_prompt,
+        )
+        
+        logger.info("LANGGRAPH_AGENT_INITIALIZED", extra={
+            "event": "langgraph_agent_init_completed",
+            "tools_count": 1,
+            "tool_names": ["get_paul_info"],
+        })
+    
+    return _agent
+
+
+# Export agent getter for use in server.py
+# Agent is initialized lazily on first use
+def get_agent():
+    """Get the LangGraph agent (lazy initialization)."""
+    return _get_agent()

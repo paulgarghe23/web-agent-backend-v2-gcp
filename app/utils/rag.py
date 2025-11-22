@@ -15,7 +15,7 @@ def _clean_markdown_headers(text: str) -> str:
     return text.strip()
 
 
-def search(query: str, k: int = 3, max_distance: float = 1.0) -> str:
+def search(query: str, k: int = 3, max_distance: float = 1.2) -> str:
     """Search documents and return relevant context.
     
     Args:
@@ -51,6 +51,8 @@ def search(query: str, k: int = 3, max_distance: float = 1.0) -> str:
     
     # Log each result with details
     for i, (doc, score) in enumerate(results_with_scores):
+        source = doc.metadata.get("source", "unknown")
+        is_cv = "CV" in str(source).upper() or "cv" in str(source).lower()
         logger.info("VECTOR_SEARCH_RESULT_DETAIL", extra={
             "event": "vector_search_result_detail",
             "query": query,
@@ -58,6 +60,9 @@ def search(query: str, k: int = 3, max_distance: float = 1.0) -> str:
             "score": round(score, 4),
             "score_passed_threshold": score <= max_distance,
             "document_length": len(doc.page_content),
+            "document_source": source,
+            "is_from_cv": is_cv,
+            "document_content_full": doc.page_content,  # FULL CONTENT to see if CV is included
             "document_preview": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
             "metadata": doc.metadata,
         })
