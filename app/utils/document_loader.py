@@ -31,6 +31,14 @@ def _load_from_local(data_dir: str = "data") -> list[Document]:
         })
         loader = PyPDFLoader(str(pdf))
         pdf_docs = loader.load()
+        
+        # Clean PDF text: remove excessive newlines (PyPDF sometimes extracts with \n after each word)
+        for doc in pdf_docs:
+            # Replace "\n \n" with space, then collapse multiple spaces
+            doc.page_content = doc.page_content.replace('\n \n', ' ').replace('\n', ' ')
+            # Collapse multiple spaces into one
+            doc.page_content = ' '.join(doc.page_content.split())
+        
         docs.extend(pdf_docs)
         logger.info("PDF_LOADED", extra={
             "event": "pdf_loaded",
