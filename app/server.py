@@ -317,12 +317,9 @@ def stream_messages(
                     
                     final_answer = content
                     
-                    # Stream the final answer
-                    chunk_size = 10
-                    for i in range(0, len(content), chunk_size):
-                        chunk = content[i:i + chunk_size]
-                        yield dumps({"type": "AIMessageChunk", "content": chunk}) + "\n"
-                        chunks_sent += 1
+                    # Send the complete response
+                    yield dumps({"type": "AIMessage", "content": content}) + "\n"
+                    chunks_sent = 1
         
         request_time = time.time() - request_start
         

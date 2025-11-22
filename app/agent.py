@@ -47,7 +47,7 @@ def _get_client() -> ChatVertexAI:
             project=project_id,
             location=location,
             temperature=0.2,
-            max_tokens=400,
+            max_tokens=500,
         )
     return _client
 
