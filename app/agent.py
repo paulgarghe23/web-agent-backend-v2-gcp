@@ -277,7 +277,7 @@ def send_contact_form(name: str, email: str, message: str) -> str:
         
         # Handle success
         if is_success:
-            success_msg = f"✅ Your message has been sent successfully! I'll get back to you at {email} soon."
+            success_msg = f"✅ Your message has been sent successfully! Paul will get back to you at {email} soon."
             logger.info("TOOL_SEND_CONTACT_FORM_SUCCESS", extra={
                 "event": "tool_send_contact_form_success",
                 "status_code": response.status_code,
