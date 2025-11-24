@@ -40,7 +40,7 @@ deploy:
 		--region "europe-west1" \
 		--allow-unauthenticated \
 		--update-build-env-vars "AGENT_VERSION=0.1.0" \
-		--set-env-vars "GCS_BUCKET_NAME=web-agent-data-web-agent-gcp-project"
+		--set-env-vars "GOOGLE_CLOUD_PROJECT=$$PROJECT_ID,GCS_BUCKET_NAME=web-agent-data-web-agent-gcp-project"
 
 # ==============================================================================
 # 🧪 TESTS & QUALITY
