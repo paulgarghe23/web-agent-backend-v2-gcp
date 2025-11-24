@@ -6504,6 +6504,7 @@ dependencies = [
     { name = "psycopg2-binary" },
     { name = "pypdf" },
     { name = "python-dotenv" },
+    { name = "requests" },
     { name = "traceloop-sdk" },
     { name = "uvicorn" },
 ]
@@ -6557,6 +6558,7 @@ requires-dist = [
     { name = "psycopg2-binary", specifier = ">=2.9.10,<3.0.0" },
     { name = "pypdf", specifier = ">=3.0.0,<4.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "requests", specifier = ">=2.31.0" },
     { name = "ruff", marker = "extra == 'lint'", specifier = ">=0.4.6,<1.0.0" },
     { name = "streamlit", marker = "extra == 'streamlit'", specifier = ">=1.42.0,<2.0.0" },
     { name = "streamlit-extras", marker = "extra == 'streamlit'", specifier = ">=0.4.3,<1.0.0" },

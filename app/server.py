@@ -272,11 +272,12 @@ def stream_messages(
             # state is a dict with the full graph state
             last_state = state
             
-            # Log tool calls only once (first time we see them)
-            if not tool_call_logged:
-                messages = state.get("messages", [])
-                for msg in messages:
-                    if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            # Log tool calls and tool results
+            messages = state.get("messages", [])
+            for msg in messages:
+                # Log tool calls
+                if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                    if not tool_call_logged:
                         tool_names = [tc.get('name', 'unknown') if isinstance(tc, dict) else getattr(tc, 'name', 'unknown') for tc in msg.tool_calls]
                         logger.info("TOOL_CALL_DETECTED", extra={
                             "event": "tool_call_detected",
@@ -284,7 +285,18 @@ def stream_messages(
                             "tool_names": tool_names,
                         })
                         tool_call_logged = True
-                        break
+                
+                # Log tool results (ToolMessage)
+                if hasattr(msg, 'type') and msg.type == "tool":
+                    tool_name = getattr(msg, 'name', 'unknown')
+                    tool_content = getattr(msg, 'content', '')
+                    tool_content_str = str(tool_content) if tool_content else "No content"
+                    logger.info("TOOL_RESULT_DETECTED", extra={
+                        "event": "tool_result_detected",
+                        "tool_name": tool_name,
+                        "tool_content_full": tool_content_str,
+                        "tool_content_length": len(tool_content_str),
+                    })
         
         # After stream completes, extract the final AI message from the last state
         if last_state:
