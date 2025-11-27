@@ -354,13 +354,25 @@ def stream_messages(
             
     except Exception as e:
         request_time = time.time() - request_start
-        logger.error("ERROR_IN_STREAM_MESSAGES", extra={
-            "event": "error",
-            "error_type": type(e).__name__,
-            "error_message": str(e),
-            "request_time_seconds": round(request_time, 3),
-        }, exc_info=True)
-        error_message = {"type": "error", "content": f"Error: {str(e)}"}
+        error_str = str(e)
+        
+        # Handle the specific "parts field" error more elegantly
+        if "parts field" in error_str.lower() or "must include at least one parts" in error_str.lower():
+            logger.warning("VERTEX_AI_EMPTY_PARTS_ERROR", extra={
+                "event": "vertex_ai_empty_parts",
+                "error_message": error_str,
+                "request_time_seconds": round(request_time, 3),
+            })
+            error_message = {"type": "error", "content": "Lo siento, parece que hubo un problema con el mensaje. ¿Puedes intentar enviarlo de nuevo?"}
+        else:
+            logger.error("ERROR_IN_STREAM_MESSAGES", extra={
+                "event": "error",
+                "error_type": type(e).__name__,
+                "error_message": error_str,
+                "request_time_seconds": round(request_time, 3),
+            }, exc_info=True)
+            error_message = {"type": "error", "content": "Lo siento, hubo un error procesando tu mensaje. Por favor, inténtalo de nuevo."}
+        
         yield dumps(error_message) + "\n"
 
 
