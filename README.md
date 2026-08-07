@@ -4,7 +4,7 @@ Production RAG agent powering the AI assistant at [paulgarghe.com](https://paulg
 
 Built with **LangGraph** + **Google Vertex AI (Gemini)** for agent orchestration, **FAISS** for vector retrieval over my CV/work history, and deployed on **Cloud Run** via Terraform + Cloud Build CI/CD.
 
-Scaffolded from [`googleCloudPlatform/agent-starter-pack`](https://github.com/GoogleCloudPlatform/agent-starter-pack) (`0.19.2`) and extended with custom retrieval, tool-calling, and production observability (OpenTelemetry → Cloud Trace/Logging → BigQuery).
+Scaffolded from [`googleCloudPlatform/agent-starter-pack`](https://github.com/GoogleCloudPlatform/agent-starter-pack) (`0.19.2`) and extended with custom retrieval, tool-calling, and OpenTelemetry-instrumented tracing/logging.
 
 ## Project Structure
 
