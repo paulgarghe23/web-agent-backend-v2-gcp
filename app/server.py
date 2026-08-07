@@ -19,7 +19,7 @@ import time
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import logging as google_cloud_logging
 from langchain_core.runnables import RunnableConfig
@@ -33,15 +33,20 @@ from app.utils.typing import Feedback, InputChat, Request, dumps, ensure_valid_c
 load_dotenv()
 
 
+# Check if running locally (not in Cloud Run/GKE) by checking environment
+is_local = os.getenv("K_SERVICE") is None and os.getenv("GAE_SERVICE") is None
+
 # Initialize FastAPI app and logging
+# API docs are only exposed locally - no auth/rate-limiting exists on the
+# endpoints they describe, so leaving them public in production makes it
+# trivial for anyone to call /stream_messages directly and run up the bill.
 app = FastAPI(
     title="web-agent",
     description="API for interacting with the Agent web-agent",
+    docs_url="/docs" if is_local else None,
+    redoc_url="/redoc" if is_local else None,
+    openapi_url="/openapi.json" if is_local else None,
 )
-
-# Use standard Python logging for local dev, Google Cloud Logging for production
-# Check if running locally (not in Cloud Run/GKE) by checking environment
-is_local = os.getenv("K_SERVICE") is None and os.getenv("GAE_SERVICE") is None
 
 if is_local:
     # LOCAL: Always use console logging when running locally with detailed format
@@ -377,10 +382,10 @@ def stream_messages(
 
 
 # Routes
-@app.get("/", response_class=RedirectResponse)
-def redirect_root_to_docs() -> RedirectResponse:
-    """Redirect the root URL to the API documentation."""
-    return RedirectResponse(url="/docs")
+@app.get("/")
+def health_check() -> dict:
+    """Basic health check endpoint."""
+    return {"status": "ok"}
 
 
 @app.post("/stream_messages")
