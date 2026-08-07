@@ -18,7 +18,8 @@ from collections.abc import Generator
 import time
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Request as FastAPIRequest
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from google.cloud import logging as google_cloud_logging
@@ -381,6 +382,34 @@ def stream_messages(
         yield dumps(error_message) + "\n"
 
 
+# Rate limiting: in-memory sliding window keyed by client IP. State is
+# per Cloud Run instance rather than shared across instances, which is an
+# acceptable tradeoff at this service's scale (max 2 instances).
+_request_log: dict[str, list[float]] = {}
+
+
+def _client_ip(request: FastAPIRequest) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def rate_limiter(max_requests: int, window_seconds: int):
+    def check(request: FastAPIRequest) -> None:
+        ip = _client_ip(request)
+        now = time.time()
+        timestamps = [t for t in _request_log.get(ip, []) if now - t < window_seconds]
+        if len(timestamps) >= max_requests:
+            raise HTTPException(
+                status_code=429, detail="Too many requests, please slow down."
+            )
+        timestamps.append(now)
+        _request_log[ip] = timestamps
+
+    return check
+
+
 # Routes
 @app.get("/")
 def health_check() -> dict:
@@ -389,7 +418,9 @@ def health_check() -> dict:
 
 
 @app.post("/stream_messages")
-def stream_chat_events(request: Request) -> StreamingResponse:
+def stream_chat_events(
+    request: Request, _: None = Depends(rate_limiter(20, 60))
+) -> StreamingResponse:
     """Stream chat events in response to an input request.
 
     Args:
@@ -405,7 +436,9 @@ def stream_chat_events(request: Request) -> StreamingResponse:
 
 
 @app.post("/feedback")
-def collect_feedback(feedback: Feedback) -> dict[str, str]:
+def collect_feedback(
+    feedback: Feedback, _: None = Depends(rate_limiter(10, 60))
+) -> dict[str, str]:
     """Collect and log feedback.
 
     Args:

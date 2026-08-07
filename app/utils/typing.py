@@ -29,7 +29,15 @@ from langchain_core.runnables import RunnableConfig
 from pydantic import (
     BaseModel,
     Field,
+    field_validator,
 )
+
+MAX_MESSAGES_PER_REQUEST = 40
+MAX_CHARS_PER_MESSAGE = 6000  # generous enough for e.g. a pasted job description
+
+
+def _content_length(content: Any) -> int:
+    return len(content) if isinstance(content, str) else len(str(content))
 
 
 class InputChat(BaseModel):
@@ -40,6 +48,20 @@ class InputChat(BaseModel):
     ] = Field(
         ..., description="The chat messages representing the current conversation."
     )
+
+    @field_validator("messages")
+    @classmethod
+    def enforce_size_limits(cls, messages: list) -> list:
+        if len(messages) > MAX_MESSAGES_PER_REQUEST:
+            raise ValueError(
+                f"Too many messages: max {MAX_MESSAGES_PER_REQUEST} per request"
+            )
+        for m in messages:
+            if _content_length(m.content) > MAX_CHARS_PER_MESSAGE:
+                raise ValueError(
+                    f"Message too long: max {MAX_CHARS_PER_MESSAGE} characters per message"
+                )
+        return messages
 
 
 class Request(BaseModel):
